@@ -16,11 +16,6 @@ import os
 import sys
 import tempfile
 
-from fastapi.testclient import TestClient
-
-from app.core.config import Settings
-from app.main import create_app
-
 SOURCE = """# Brownian Motion
 
 Brownian motion is a continuous-time stochastic process that models the random
@@ -52,11 +47,20 @@ def main() -> None:
     if hasattr(sys.stdout, "reconfigure"):
         sys.stdout.reconfigure(encoding="utf-8", errors="replace")
 
+    # Decide the database location BEFORE importing the app. app.main creates the app
+    # at import time and Settings.from_environment() then loads .env into os.environ;
+    # if .env sets DATA_DIR, importing first would fool the check below and the smoke
+    # run would pollute the dev database.
     if os.environ.get("DATA_DIR", "").strip():
         print(f"Using existing DATA_DIR={os.environ['DATA_DIR']} (unset it to use a scratch DB)")
     else:
         os.environ.pop("DATA_DIR", None)
         os.environ["DATA_DIR"] = tempfile.mkdtemp(prefix="e2e-smoke-")
+
+    from fastapi.testclient import TestClient  # noqa: E402
+
+    from app.core.config import Settings  # noqa: E402 (after the DATA_DIR decision above)
+    from app.main import create_app  # noqa: E402
 
     settings = Settings.from_environment()
     if not settings.llm_enabled:
