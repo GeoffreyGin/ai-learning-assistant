@@ -3,7 +3,9 @@ from fastapi.testclient import TestClient
 
 def test_upload_text_creates_traceable_document_and_concepts(client: TestClient) -> None:
     source = b"# Brownian Motion\nBrownian Motion is used with Ito's Lemma in quantitative finance."
-    response = client.post("/documents/upload", files={"file": ("finance.md", source, "text/markdown")})
+    response = client.post(
+        "/documents/upload", files={"file": ("finance.md", source, "text/markdown")}
+    )
     assert response.status_code == 201
     payload = response.json()
     assert payload["chunk_count"] == 1
@@ -16,14 +18,18 @@ def test_upload_text_creates_traceable_document_and_concepts(client: TestClient)
     concepts = client.get("/concepts").json()
     names = {concept["name"] for concept in concepts}
     assert "Brownian Motion" in names
-    brownian_id = next(concept["id"] for concept in concepts if concept["name"] == "Brownian Motion")
+    brownian_id = next(
+        concept["id"] for concept in concepts if concept["name"] == "Brownian Motion"
+    )
     concept = client.get(f"/concepts/{brownian_id}")
     assert concept.status_code == 200
     assert concept.json()["source_chunks"][0]["document_id"] == payload["document"]["id"]
 
 
 def test_upload_rejects_unsupported_file_type(client: TestClient) -> None:
-    response = client.post("/documents/upload", files={"file": ("notes.docx", b"x", "application/octet-stream")})
+    response = client.post(
+        "/documents/upload", files={"file": ("notes.docx", b"x", "application/octet-stream")}
+    )
     assert response.status_code == 422
 
 

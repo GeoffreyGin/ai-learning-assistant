@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SourceChunkResponse(BaseModel):
@@ -31,6 +31,8 @@ class UploadDocumentResponse(BaseModel):
     chunk_count: int
     extracted_mentions: int
     new_concept_count: int
+    new_relationship_count: int = 0
+    llm_fallback_chunks: int = 0
 
 
 class GroundedClaimResponse(BaseModel):
@@ -56,3 +58,137 @@ class ConceptResponse(BaseModel):
 
 class ConceptDetailResponse(ConceptResponse):
     source_chunks: list[SourceChunkResponse]
+
+
+class PrerequisiteResponse(BaseModel):
+    concept: ConceptResponse
+    distance: int
+
+
+class RelatedConceptResponse(BaseModel):
+    concept: ConceptResponse
+    relation_type: str
+    confidence: float
+
+
+class CreateConceptRequest(BaseModel):
+    name: str
+    description: str = ""
+
+
+class UpdateConceptRequest(BaseModel):
+    description: str
+
+
+class CreateRelationshipRequest(BaseModel):
+    source: str
+    target: str
+    relation_type: str
+    confidence: float = 0.7
+
+
+class RelationshipResponse(BaseModel):
+    id: int
+    source_concept_id: int
+    target_concept_id: int
+    relation_type: str
+    confidence: float
+    created: bool
+
+
+class GraphNodeResponse(BaseModel):
+    id: int
+    name: str
+    mastery: float | None
+
+
+class GraphEdgeResponse(BaseModel):
+    source: int
+    target: int
+    type: str
+    confidence: float
+
+
+class GraphResponse(BaseModel):
+    nodes: list[GraphNodeResponse]
+    edges: list[GraphEdgeResponse]
+
+
+class GapEntryResponse(BaseModel):
+    concept: ConceptResponse
+    distance: int
+    status: str
+    mastery: float | None
+    evidence_count: int
+    has_source_evidence: bool
+
+
+class GapReportResponse(BaseModel):
+    target: ConceptResponse
+    prerequisites: list[GapEntryResponse]
+    gaps: list[GapEntryResponse]
+
+
+class RecommendedTopicResponse(BaseModel):
+    concept: ConceptResponse
+    status: str
+    mastery: float | None
+    evidence_count: int
+    reason: str
+
+
+class RecommendationResponse(BaseModel):
+    topics: list[RecommendedTopicResponse]
+
+
+class GenerateAssessmentRequest(BaseModel):
+    concept_id: int
+    difficulty: int | None = Field(default=None, ge=1, le=3)
+
+
+class GenerateAssessmentResponse(BaseModel):
+    attempt_id: int
+    concept_id: int
+    concept_name: str
+    question: str
+    question_type: str
+    difficulty: int
+
+
+class SubmitAssessmentRequest(BaseModel):
+    attempt_id: int
+    user_answer: str
+
+
+class SubmitAssessmentResponse(BaseModel):
+    attempt_id: int
+    concept_id: int
+    correct: bool
+    score: float
+    reasoning: str
+    identified_mistakes: list[str]
+    mastery_before: float | None
+    mastery_after: float
+    evidence_count: int
+
+
+class AgentChatRequest(BaseModel):
+    message: str
+
+
+class PendingQuestionResponse(BaseModel):
+    attempt_id: int
+    concept_id: int
+    concept_name: str
+    question: str
+
+
+class AgentActionResponse(BaseModel):
+    tool: str
+    detail: str
+
+
+class AgentChatResponse(BaseModel):
+    reply: str
+    actions: list[AgentActionResponse]
+    pending: PendingQuestionResponse | None

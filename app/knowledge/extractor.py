@@ -3,7 +3,9 @@ from __future__ import annotations
 import re
 from typing import Protocol
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+from app.knowledge.relations import RELATION_TYPES
 
 
 class ExtractedConcept(BaseModel):
@@ -24,6 +26,21 @@ class ExtractedRelationship(BaseModel):
     target: str = Field(min_length=1)
     type: str
     confidence: float = Field(ge=0, le=1)
+
+    @field_validator("type")
+    @classmethod
+    def normalize_type(cls, value: str) -> str:
+        normalized = value.strip().upper()
+        if normalized not in RELATION_TYPES:
+            allowed = ", ".join(sorted(RELATION_TYPES))
+            raise ValueError(f"Unsupported relationship type {value!r}. Use one of: {allowed}.")
+        return normalized
+
+    @model_validator(mode="after")
+    def distinct_endpoints(self) -> ExtractedRelationship:
+        if self.source.strip().casefold() == self.target.strip().casefold():
+            raise ValueError("A relationship cannot point from a concept to itself.")
+        return self
 
 
 class ExtractionResult(BaseModel):
@@ -51,5 +68,9 @@ class LocalConceptExtractor:
             if len(clean) < 3 or key in seen:
                 continue
             seen.add(key)
-            concepts.append(ExtractedConcept(name=clean, description=f"Mentioned in uploaded material: {clean}."))
+            concepts.append(
+                ExtractedConcept(
+                    name=clean, description=f"Mentioned in uploaded material: {clean}."
+                )
+            )
         return ExtractionResult(concepts=concepts[:30])

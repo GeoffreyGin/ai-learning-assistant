@@ -4,7 +4,7 @@ import re
 from collections import Counter
 from dataclasses import dataclass
 
-from app.db.models import Concept, Document, SourceChunk
+from app.db.models import Concept, Document
 
 
 @dataclass(frozen=True)
@@ -36,7 +36,9 @@ class LocalKnowledgeSummarizer:
 
         concept_counts = Counter()
         for concept in concepts:
-            occurrences = sum(chunk.text.casefold().count(concept.name.casefold()) for chunk in chunks)
+            occurrences = sum(
+                chunk.text.casefold().count(concept.name.casefold()) for chunk in chunks
+            )
             concept_counts[concept.name] = max(occurrences, 1)
         key_concepts = [name for name, _ in concept_counts.most_common(5)]
 
@@ -53,6 +55,8 @@ class LocalKnowledgeSummarizer:
             candidates = [(0, chunks[0].id, chunks[0].text.strip())]
 
         selected = sorted(candidates, key=lambda item: (-item[0], item[1]))[:3]
-        claims = [GroundedClaim(text=text, source_chunk_id=chunk_id) for _, chunk_id, text in selected]
+        claims = [
+            GroundedClaim(text=text, source_chunk_id=chunk_id) for _, chunk_id, text in selected
+        ]
         overview = " ".join(claim.text for claim in claims)
         return KnowledgeSummary(overview=overview, key_concepts=key_concepts, claims=claims)
