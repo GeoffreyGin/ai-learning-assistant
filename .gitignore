@@ -8,4 +8,7 @@ __pycache__/
 data/*.db
 data/*.log
 data/uploads/
+data/courses/
 .claude/
+frontend/node_modules/
+frontend/dist/

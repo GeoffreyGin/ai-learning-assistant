@@ -173,3 +173,28 @@ def test_unknown_intent_with_pending_question_evaluates_it(client: TestClient) -
     second = client.post("/agent/chat", json={"message": "hello again"})
     assert second.json()["pending"] is None
     assert "record_assessment" not in {action["tool"] for action in second.json()["actions"]}
+
+
+def test_agent_log_endpoint_reads_newest_first(client: TestClient, settings) -> None:
+    assert client.get("/agent/log").json() == []
+
+    log_path = settings.data_dir / "agent.log"
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text(
+        "2026-10-03T10:00:01 [detect_gaps] first\n"
+        "2026-10-03T10:00:02 [explain] second\n"
+        "not a log line\n"
+        "2026-10-03T10:00:03 [record_assessment] third\n",
+        encoding="utf-8",
+    )
+
+    entries = client.get("/agent/log").json()
+    assert [entry["tool"] for entry in entries] == ["record_assessment", "explain", "detect_gaps"]
+    assert entries[0] == {
+        "timestamp": "2026-10-03T10:00:03",
+        "tool": "record_assessment",
+        "detail": "third",
+    }
+
+    limited = client.get("/agent/log?limit=2").json()
+    assert [entry["tool"] for entry in limited] == ["record_assessment", "explain"]

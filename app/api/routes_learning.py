@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.api.schemas import (
@@ -18,6 +19,7 @@ from app.api.schemas import (
 )
 from app.core.config import Settings
 from app.db.repositories import KnowledgeRepository
+from app.db.models import AssessmentAttempt, Concept, PracticeGuide
 from app.learning.assessment import AssessmentService
 from app.learning.gap_detector import GapDetector, GapEntry
 from app.learning.mastery import MasteryService
@@ -27,6 +29,25 @@ from app.llm.provider import LLMProvider
 
 def make_learning_router(get_session, llm: LLMProvider | None, settings: Settings) -> APIRouter:
     router = APIRouter(tags=["learning"])
+
+    @router.get("/learning/progress")
+    def course_progress(session: Session = Depends(get_session)):
+        graded = AssessmentAttempt.user_answer.is_not(None)
+        total, tested = session.execute(select(
+            func.count(AssessmentAttempt.id), func.count(func.distinct(AssessmentAttempt.concept_id))
+        ).where(graded)).one()
+        correct = session.scalar(select(func.count(AssessmentAttempt.id)).where(
+            graded, AssessmentAttempt.result.is_(True)))
+        concepts = session.scalar(select(func.count(Concept.id)))
+        recent = session.execute(select(AssessmentAttempt, Concept.name, PracticeGuide)
+            .join(Concept, Concept.id == AssessmentAttempt.concept_id)
+            .outerjoin(PracticeGuide, PracticeGuide.attempt_id == AssessmentAttempt.id)
+            .where(graded).order_by(AssessmentAttempt.id.desc()).limit(5))
+        return {"total": total, "correct": correct, "untested": concepts - tested, "recent": [
+            {"id": a.id, "concept": name, "question": a.question, "answer": a.user_answer,
+             "correct": a.result, "hints": len(guide.hints) if guide else 0}
+            for a, name, guide in recent
+        ]}
 
     def build_gap_detector(session: Session) -> GapDetector:
         return GapDetector(

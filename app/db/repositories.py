@@ -29,6 +29,14 @@ class KnowledgeRepository:
     def __init__(self, session: Session) -> None:
         self.session = session
 
+    def id_directory(self) -> dict:
+        documents = select(Document.id, Document.title).order_by(Document.title, Document.id)
+        concepts = select(Concept.id, Concept.name).order_by(Concept.name, Concept.id)
+        return {
+            "documents": self.session.execute(documents).mappings().all(),
+            "concepts": self.session.execute(concepts).mappings().all(),
+        }
+
     # -- Documents -------------------------------------------------------
 
     def create_document(self, *, title: str, file_path: str, file_type: str) -> Document:

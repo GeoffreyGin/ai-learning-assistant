@@ -14,16 +14,18 @@ class KnowledgeGraph:
     def __init__(self, repository: KnowledgeRepository) -> None:
         self.repository = repository
 
-    def build(self) -> nx.DiGraph:
-        graph = nx.DiGraph()
+    def build(self) -> nx.MultiDiGraph:
+        graph = nx.MultiDiGraph()
         for concept in self.repository.list_concepts():
             graph.add_node(concept.id, name=concept.name)
         for relationship in self.repository.list_relationships():
             graph.add_edge(
                 relationship.source_concept_id,
                 relationship.target_concept_id,
+                key=relationship.relation_type,
                 type=relationship.relation_type,
                 confidence=relationship.confidence,
+                evidence_source_id=relationship.evidence_source_id,
             )
         return graph
 
@@ -41,7 +43,7 @@ class KnowledgeGraph:
             next_frontier: list[int] = []
             for node in frontier:
                 for predecessor in graph.predecessors(node):
-                    if graph.edges[predecessor, node].get("type") != PREREQUISITE_OF:
+                    if not graph.has_edge(predecessor, node, key=PREREQUISITE_OF):
                         continue
                     if predecessor not in seen:
                         seen.add(predecessor)
@@ -61,9 +63,9 @@ class KnowledgeGraph:
             for source, target in ((concept_id, neighbor), (neighbor, concept_id)):
                 if not graph.has_edge(source, target):
                     continue
-                edge = graph.edges[source, target]
-                if edge.get("type") != PREREQUISITE_OF:
-                    results.append((neighbor, edge.get("type", ""), edge.get("confidence", 0.0)))
+                for kind, edge in graph[source][target].items():
+                    if kind != PREREQUISITE_OF:
+                        results.append((neighbor, kind, edge["confidence"]))
         return results
 
     def serialize(self, mastery: dict[int, float | None] | None = None) -> dict:
@@ -84,6 +86,7 @@ class KnowledgeGraph:
                     "target": target,
                     "type": data.get("type"),
                     "confidence": data.get("confidence"),
+                    "evidence_source_id": data["evidence_source_id"],
                 }
                 for source, target, data in graph.edges(data=True)
             ],

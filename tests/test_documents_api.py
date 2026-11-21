@@ -1,6 +1,23 @@
 from fastapi.testclient import TestClient
 
 
+def test_directory_lists_live_ids_for_named_choices(client: TestClient) -> None:
+    assert client.get("/directory").json() == {"documents": [], "concepts": []}
+    for heading in ("Probability", "Calculus"):
+        upload = client.post("/documents/upload", files={"file": ("notes.md", f"# {heading}")})
+        upload.raise_for_status()
+
+    directory = client.get("/directory").json()
+    assert [doc["title"] for doc in directory["documents"]] == ["notes", "notes"]
+    assert len({doc["id"] for doc in directory["documents"]}) == 2
+    for doc in directory["documents"]:
+        summary = client.post(f"/documents/{doc['id']}/knowledge-summary")
+        assert summary.json()["document_id"] == doc["id"]
+    assert [concept["name"] for concept in directory["concepts"]] == ["Calculus", "Probability"]
+    for concept in directory["concepts"]:
+        assert client.get(f"/concepts/{concept['id']}").json()["name"] == concept["name"]
+
+
 def test_upload_text_creates_traceable_document_and_concepts(client: TestClient) -> None:
     source = b"# Brownian Motion\nBrownian Motion is used with Ito's Lemma in quantitative finance."
     response = client.post(

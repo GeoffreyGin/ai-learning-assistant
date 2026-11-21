@@ -10,6 +10,7 @@ from app.api.schemas import (
     ConceptResponse,
     CreateConceptRequest,
     CreateRelationshipRequest,
+    DirectoryResponse,
     GraphResponse,
     PrerequisiteResponse,
     RelatedConceptResponse,
@@ -114,6 +115,10 @@ def make_knowledge_router(get_session, llm: LLMProvider | None) -> APIRouter:
 def make_graph_router(get_session, llm: LLMProvider | None) -> APIRouter:
     router = APIRouter(tags=["knowledge"])
 
+    @router.get("/directory", summary="List document titles, concept names and their IDs")
+    def id_directory(session: Session = Depends(get_session)) -> DirectoryResponse:
+        return DirectoryResponse.model_validate(KnowledgeRepository(session).id_directory())
+
     @router.get("/graph", response_model=GraphResponse)
     def get_graph(session: Session = Depends(get_session)) -> GraphResponse:
         repository = KnowledgeRepository(session)
@@ -122,6 +127,14 @@ def make_graph_router(get_session, llm: LLMProvider | None) -> APIRouter:
             concept.id: mastery.get_estimate(concept.id) for concept in repository.list_concepts()
         }
         return GraphResponse.model_validate(KnowledgeGraph(repository).serialize(estimates))
+
+    @router.get("/passages/{passage_id}")
+    def get_passage(passage_id: int, session: Session = Depends(get_session)):
+        chunk = KnowledgeRepository(session).get_source_chunk(passage_id)
+        if not chunk:
+            raise HTTPException(404, "Passage not found.")
+        return {"document_id": chunk.document_id, "title": chunk.document.title,
+                "page": chunk.page_number, "text": chunk.text}
 
     @router.post(
         "/relationships", response_model=RelationshipResponse, status_code=status.HTTP_201_CREATED

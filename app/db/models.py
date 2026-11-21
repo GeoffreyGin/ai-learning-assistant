@@ -9,6 +9,7 @@ from sqlalchemy import (
     Float,
     ForeignKey,
     Integer,
+    JSON,
     String,
     Table,
     Text,
@@ -18,6 +19,28 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.db.database import Base
+
+
+class Course(Base):
+    __tablename__ = "courses"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    name: Mapped[str] = mapped_column(String(100))
+    name_key: Mapped[str] = mapped_column(String(200), unique=True)
+
+
+class TutorTurn(Base):
+    __tablename__ = "tutor_turns"
+    id: Mapped[int] = mapped_column(primary_key=True)
+    message: Mapped[str] = mapped_column(Text)
+    response: Mapped[dict] = mapped_column(JSON)
+
+
+class PracticeGuide(Base):
+    __tablename__ = "practice_guides"
+    attempt_id: Mapped[int] = mapped_column(ForeignKey("assessment_attempts.id"), primary_key=True)
+    source_chunk_id: Mapped[int | None] = mapped_column(ForeignKey("source_chunks.id"))
+    steps: Mapped[list] = mapped_column(JSON, default=list)
+    hints: Mapped[list] = mapped_column(JSON, default=list)
 
 concept_source_chunks = Table(
     "concept_source_chunks",

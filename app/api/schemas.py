@@ -14,10 +14,13 @@ class SourceChunkResponse(BaseModel):
     chunk_index: int
 
 
-class DocumentResponse(BaseModel):
+class DocumentLabel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     title: str
+
+
+class DocumentResponse(DocumentLabel):
     file_type: str
     created_at: datetime
 
@@ -47,10 +50,18 @@ class KnowledgeSummaryResponse(BaseModel):
     claims: list[GroundedClaimResponse]
 
 
-class ConceptResponse(BaseModel):
+class ConceptLabel(BaseModel):
     model_config = ConfigDict(from_attributes=True)
     id: int
     name: str
+
+
+class DirectoryResponse(BaseModel):
+    documents: list[DocumentLabel]
+    concepts: list[ConceptLabel]
+
+
+class ConceptResponse(ConceptLabel):
     description: str
     created_at: datetime
     updated_at: datetime
@@ -107,6 +118,7 @@ class GraphEdgeResponse(BaseModel):
     target: int
     type: str
     confidence: float
+    evidence_source_id: int | None = None
 
 
 class GraphResponse(BaseModel):
@@ -173,7 +185,12 @@ class SubmitAssessmentResponse(BaseModel):
 
 
 class AgentChatRequest(BaseModel):
-    message: str
+    message: str = Field(min_length=1, max_length=12000)
+    document_id: int | None = Field(default=None, ge=1)
+    concept_id: int | None = Field(default=None, ge=1)
+    attempt_id: int | None = Field(default=None, ge=1)
+    hint: bool = False
+    step: int | None = Field(default=None, ge=1)
 
 
 class PendingQuestionResponse(BaseModel):
@@ -181,6 +198,8 @@ class PendingQuestionResponse(BaseModel):
     concept_id: int
     concept_name: str
     question: str
+    worked_steps: list[str] = Field(default_factory=list)
+    hint_count: int = 0
 
 
 class AgentActionResponse(BaseModel):
@@ -192,3 +211,9 @@ class AgentChatResponse(BaseModel):
     reply: str
     actions: list[AgentActionResponse]
     pending: PendingQuestionResponse | None
+
+
+class AgentLogEntryResponse(BaseModel):
+    timestamp: str
+    tool: str
+    detail: str

@@ -21,7 +21,32 @@ This workspace also has a project-local Python 3.12 runtime for the MVP demo:
 .\.runtime\python312\python.exe -m uvicorn app.main:app --reload
 ```
 
-Open `http://127.0.0.1:8000/docs` for the API explorer.
+Open `http://127.0.0.1:8000/` for the web UI (four pages: Learning chat / Knowledge graph / Documents / Dashboard)
+or `http://127.0.0.1:8000/docs` for the API explorer.
+
+In [Documents](http://127.0.0.1:8000/#/documents), click a title to see its summary and source passages. Each row shows its document ID, including for uploads with the same title.
+In the [visual graph](http://127.0.0.1:8000/#/graph), pick a concept by name and ID to see its prerequisite chain. Blue arrows point from a prerequisite to the concept that uses it. Use Show full graph to return to the full network.
+The API explorer links to both screens and to `GET /directory`, a live listing of document titles and concept names with their respective IDs.
+
+### Frontend
+
+The UI is a React + TypeScript + Vite app in `frontend/`. Build it once and
+FastAPI serves `frontend/dist` (including client-side route fallbacks):
+
+```powershell
+cd frontend
+npm install
+npm run build
+```
+
+Then start the backend as above. For frontend development with hot reload,
+run `npm run dev` in `frontend/` — it proxies API calls to the backend on
+port 8000:
+
+```powershell
+cd frontend
+npm run dev   # http://localhost:5173
+```
 
 ### LLM configuration
 
@@ -77,6 +102,7 @@ POST /agent/chat {"message": "true"}   // answer the open question
 - `POST /assessment/generate` — generate one targeted question.
 - `POST /assessment/submit` — grade an answer and update mastery.
 - `POST /agent/chat` — the conversational learning agent (logged tool calls in `data/agent.log`).
+- `GET /agent/log?limit=200` — recent agent action-log entries, newest first.
 
 ## How it works
 

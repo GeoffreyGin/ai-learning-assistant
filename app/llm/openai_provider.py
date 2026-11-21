@@ -81,9 +81,20 @@ class OpenAICompatibleProvider:
         *,
         json_mode: bool = False,
     ) -> dict:
+        instructions = (
+            "Write all learner-facing prose in English, including explanations, "
+            "summaries, questions and feedback. Preserve exact source quotations, "
+            "identifiers, names and required schema values. Typeset math with LaTeX: "
+            "use $...$ for inline math and $$...$$ on separate lines for display math."
+        )
+        conversation = [message.model_dump() for message in messages]
+        if conversation and conversation[0]["role"] == "system":
+            conversation[0]["content"] += "\n\n" + instructions
+        else:
+            conversation.insert(0, {"role": "system", "content": instructions})
         payload: dict = {
             "model": self.model,
-            "messages": [message.model_dump() for message in messages],
+            "messages": conversation,
             "max_tokens": max_tokens,
             "temperature": temperature,
         }

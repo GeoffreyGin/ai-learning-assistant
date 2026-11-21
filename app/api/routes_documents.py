@@ -4,6 +4,7 @@ from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 from sqlalchemy.orm import Session
 
 from app.api.schemas import (
+    ConceptLabel,
     DocumentDetailResponse,
     DocumentResponse,
     GroundedClaimResponse,
@@ -75,5 +76,20 @@ def make_documents_router(get_session, ingestion_service: IngestionService) -> A
         if document is None:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Document not found.")
         return DocumentDetailResponse.model_validate(document)
+
+    @router.get("/{document_id}/topics", response_model=list[ConceptLabel])
+    def lecture_topics(document_id: int, session: Session = Depends(get_session)):
+        repository = KnowledgeRepository(session)
+        doc = repository.get_document(document_id)
+        if doc is None:
+            raise HTTPException(404, "Document not found.")
+        topics = repository.list_document_concepts(document_id)
+        chunk_ids = {chunk.id for chunk in doc.chunks}
+        title = doc.title.casefold().replace("_", " ")
+        return sorted(topics, key=lambda c: (
+            c.name.casefold() not in title,
+            -sum(chunk.id in chunk_ids for chunk in c.source_chunks),
+            c.name.casefold(),
+        ))
 
     return router

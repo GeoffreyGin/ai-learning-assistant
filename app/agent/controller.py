@@ -11,6 +11,7 @@ from __future__ import annotations
 import re
 
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 
 from app.agent.logging import ActionLogger
 from app.agent.prompts import (
@@ -21,7 +22,8 @@ from app.agent.prompts import (
 )
 from app.agent.tools import ToolSet
 from app.core.config import Settings
-from app.db.models import Concept
+from app.db.models import Concept, PracticeGuide, TutorTurn
+from app.learning.guidance import give_clue, pending_question, start_lecture
 from app.learning.gap_detector import MASTERED, UNKNOWN, WEAK
 from app.llm.provider import LLMError, LLMMessage, LLMProvider
 
@@ -33,6 +35,10 @@ LEARN_INTENT = re.compile(
 )
 TEST_INTENT = re.compile(r"\b(test|testing|quiz|assess|examine)\b", re.IGNORECASE)
 CONTINUE_INTENT = re.compile(r"^(continue|go on|next( question)?|more)[.!]?$", re.IGNORECASE)
+HELP_INTENT = re.compile(
+    r"\b(hint|clue|stuck|confused)\b|^(why\b|how (do|can|did|does)\b|"
+    r"explain (this|that|step)\b|i (don't|don’t|do not) (know|understand))", re.IGNORECASE
+)
 
 _STATUS_SYMBOLS = {MASTERED: "✓", WEAK: "△", UNKNOWN: "✗"}
 
@@ -55,12 +61,33 @@ class AgentController:
         # the answered concept itself. Knowledge and mastery live in the database.
         self.goal_by_attempt: dict[int, int | None] = {}
 
-    def chat(self, message: str) -> dict:
+    def history(self):
+        with self.session_factory() as session:
+            turns = session.scalars(select(TutorTurn).order_by(TutorTurn.id.desc()).limit(60)).all()
+            return [{"message": t.message, **t.response} for t in reversed(turns)]
+
+    def chat(self, message: str, *, document_id=None, concept_id=None, attempt_id=None,
+             hint=False, step=None) -> dict:
         with self.session_factory() as session:
             logger = ActionLogger(self.settings.data_dir / "agent.log")
             tools = ToolSet(session, llm=self.llm, settings=self.settings, logger=logger)
             text = message.strip()
-            if RECOMMEND_INTENT.search(text):
+            if not text:
+                raise ValueError("Enter a message.")
+            attempt = (tools.repository.get_attempt(attempt_id) if attempt_id
+                       else tools.repository.latest_pending_attempt())
+            if attempt_id and (attempt is None or attempt.user_answer is not None):
+                raise ValueError("This question is no longer open.")
+            if document_id is not None or concept_id is not None:
+                reply, pending = start_lecture(tools, document_id, concept_id)
+            elif hint or (attempt and HELP_INTENT.search(text)):
+                if attempt is None:
+                    reply, pending = "Choose a lecture topic or start a question to get a clue.", None
+                else:
+                    reply, pending = give_clue(tools, attempt, text, step)
+            elif attempt_id:
+                reply, pending = self._handle_answer(text, tools, attempt)
+            elif RECOMMEND_INTENT.search(text):
                 reply, pending = self._handle_recommend(text, tools)
             elif LEARN_INTENT.search(text):
                 reply, pending = self._handle_learn(text, tools)
@@ -69,13 +96,14 @@ class AgentController:
             elif CONTINUE_INTENT.match(text):
                 reply, pending = self._handle_continue(tools)
             else:
-                pending_attempt = tools.repository.latest_pending_attempt()
-                if pending_attempt is not None:
-                    reply, pending = self._handle_answer(text, tools, pending_attempt)
+                if attempt is not None:
+                    reply, pending = self._handle_answer(text, tools, attempt)
                 else:
                     reply, pending = self._handle_chat(text, tools)
+            response = {"reply": reply, "actions": logger.entries, "pending": pending}
+            session.add(TutorTurn(message=text, response=response))
             session.commit()
-            return {"reply": reply, "actions": logger.entries, "pending": pending}
+            return response
 
     # -- Intent handlers ------------------------------------------------------
 
@@ -205,12 +233,7 @@ class AgentController:
             return (
                 f"There is an open question on {name} — answer it first:\n\n"
                 f"{pending_attempt.question}",
-                {
-                    "attempt_id": pending_attempt.id,
-                    "concept_id": pending_attempt.concept_id,
-                    "concept_name": name,
-                    "question": pending_attempt.question,
-                },
+                pending_question(pending_attempt, tools.session.get(PracticeGuide, pending_attempt.id)),
             )
         topics = tools.recommender.recommend(None, 1)
         if not topics:
@@ -240,9 +263,19 @@ class AgentController:
                 or "(no concepts yet)"
             )
             try:
+                history = tools.session.scalars(
+                    select(TutorTurn).order_by(TutorTurn.id.desc()).limit(4)
+                ).all()
+                recent = [
+                    message for turn in reversed(history) for message in (
+                        LLMMessage(role="user", content=turn.message[:1500]),
+                        LLMMessage(role="assistant", content=turn.response["reply"][:1500]),
+                    )
+                ]
                 reply = self.llm.generate(
                     [
                         LLMMessage(role="system", content=CHAT_SYSTEM_PROMPT),
+                        *recent,
                         LLMMessage(
                             role="user", content=f"Known concepts:\n{context}\n\nUser: {text}"
                         ),
